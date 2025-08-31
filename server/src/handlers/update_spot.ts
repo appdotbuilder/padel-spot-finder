@@ -1,31 +1,88 @@
+import { db } from '../db';
+import { spotsTable } from '../db/schema';
 import { type UpdateSpotInput, type Spot } from '../schema';
+import { eq } from 'drizzle-orm';
 
-export async function updateSpot(input: UpdateSpotInput): Promise<Spot | null> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is updating an existing padel spot in the database.
-    // It should:
-    // 1. Check if the spot exists
-    // 2. Validate the update input data
-    // 3. Update only the provided fields in the database
-    // 4. Update the updated_at timestamp
-    // 5. Return the updated spot data or null if not found
+export const updateSpot = async (input: UpdateSpotInput): Promise<Spot | null> => {
+  try {
+    // First check if the spot exists
+    const existingSpot = await db.select()
+      .from(spotsTable)
+      .where(eq(spotsTable.id, input.id))
+      .execute();
+
+    if (existingSpot.length === 0) {
+      return null;
+    }
+
+    // Build update object with only provided fields
+    const updateData: Record<string, any> = {
+      updated_at: new Date() // Always update the timestamp
+    };
+
+    if (input.club_name !== undefined) {
+      updateData['club_name'] = input.club_name;
+    }
     
-    // Mock implementation - assumes spot exists and returns updated data
-    return Promise.resolve({
-        id: input.id,
-        club_name: input.club_name || "Existing Club Name",
-        date: input.date ? new Date(input.date) : new Date(),
-        time: input.time || "14:30",
-        court_number: input.court_number || "Court 1",
-        player_replaced: input.player_replaced || "Existing Player",
-        cost: input.cost ?? 0,
-        is_free: input.is_free ?? true,
-        location_lat: input.location_lat ?? null,
-        location_lng: input.location_lng ?? null,
-        existing_players: [
-            { id: 1, name: "Mock Player", skill_level: "intermediate" as const },
-        ],
-        created_at: new Date(),
-        updated_at: new Date(), // Should be set to current time in real implementation
-    } as Spot);
-}
+    if (input.date !== undefined) {
+      updateData['date'] = new Date(input.date);
+    }
+    
+    if (input.time !== undefined) {
+      updateData['time'] = input.time;
+    }
+    
+    if (input.court_number !== undefined) {
+      updateData['court_number'] = input.court_number;
+    }
+    
+    if (input.player_replaced !== undefined) {
+      updateData['player_replaced'] = input.player_replaced;
+    }
+    
+    if (input.cost !== undefined) {
+      updateData['cost'] = input.cost.toString(); // Convert number to string for numeric column
+    }
+    
+    if (input.is_free !== undefined) {
+      updateData['is_free'] = input.is_free;
+    }
+    
+    if (input.location_lat !== undefined) {
+      updateData['location_lat'] = input.location_lat?.toString() || null; // Convert number to string for numeric column
+    }
+    
+    if (input.location_lng !== undefined) {
+      updateData['location_lng'] = input.location_lng?.toString() || null; // Convert number to string for numeric column
+    }
+
+    // Update the spot in the database
+    const result = await db.update(spotsTable)
+      .set(updateData)
+      .where(eq(spotsTable.id, input.id))
+      .returning()
+      .execute();
+
+    if (result.length === 0) {
+      return null;
+    }
+
+    // Convert numeric fields back to numbers before returning
+    const updatedSpot = result[0];
+    return {
+      ...updatedSpot,
+      date: updatedSpot.date, // Already a Date object
+      cost: parseFloat(updatedSpot.cost), // Convert string back to number
+      location_lat: updatedSpot.location_lat ? parseFloat(updatedSpot.location_lat) : null,
+      location_lng: updatedSpot.location_lng ? parseFloat(updatedSpot.location_lng) : null,
+      existing_players: (updatedSpot.existing_players as any[]).map((player, index) => ({
+        id: index + 1, // Generate IDs for existing players array
+        name: player.name,
+        skill_level: player.skill_level as any
+      }))
+    };
+  } catch (error) {
+    console.error('Spot update failed:', error);
+    throw error;
+  }
+};
